@@ -18,6 +18,51 @@ ReviewRoulette is a **weighted** picker where a reviewer's odds are based on the
 
 As always, I like to plan first, therefore, nothing is built yet. This repo currently holds the problem statement and the roadmap below. Code starts with v0.
 
+## Architecture
+
+```mermaid
+graph TD
+    subgraph Frontend["Frontend — Next.js + TypeScript"]
+        UI[Spinner UI]
+    end
+
+    subgraph Backend["Backend — Python"]
+        API[API layer]
+        Engine[Weighting engine]
+        Contract[Target contract]
+    end
+
+    subgraph Targets["Targets — implement the contract"]
+        GH[GitHub target]
+        GL[GitLab target — v3]
+    end
+
+    subgraph Reliability["Reliability layer — v2"]
+        Hook[Webhook handler]
+        Queue[(Message queue)]
+        Worker[Picker worker]
+    end
+
+    DB[(Reviewer + review history data)]
+
+    GitHubExt[GitHub] -->|PR opened| Hook
+    GitLabExt[GitLab] -.->|MR opened, v3| Hook
+    Hook --> Queue
+    Queue --> Worker
+    Worker --> Engine
+    Engine --> Contract
+    Contract --> GH
+    Contract --> GL
+    GH -->|comment posted| GitHubExt
+    GL -.->|comment posted, v3| GitLabExt
+    Worker --> DB
+    UI --> API
+    API --> Engine
+    API --> DB
+```
+
+The ultimate goal is to keep all layers modular. We want to be able to swap providers in and out without impacting the underlaying logic. The frontend never talks to GitHub or GitLab directly, it goes through the Python API, which uses the engine, which goes through the target contract. Dashed lines mark the GitLab (v3) parts that aren't built yet.
+
 ## Design approach: platforms as pluggable targets
 
 The plan is to build this around a **target** which is a contract that defines what any version-control platform integration has to implement (fetch PR/MR details, list eligible reviewers, post a comment, etc.), rather than writing GitHub-specific code straight through. GitHub is the first target, since it's the platform most teams use, even though GitLab is what I actually work with day to day. The contract is what makes GitLab, Bitbucket, or anything else a matter of writing a new target, not rewriting the engine. The weighting logic itself never needs to know which platform it's running against.
